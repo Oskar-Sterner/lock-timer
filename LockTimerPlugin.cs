@@ -95,14 +95,28 @@ public class LockTimerPlugin : DeadworksPluginBase
 
     public override bool OnClientConnect(ClientConnectEvent args)
     {
-        _slotToSteamId[args.Slot] = args.SteamId;
+        try
+        {
+            _slotToSteamId[args.Slot] = args.SteamId;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{Name}] OnClientConnect failed: {ex}");
+        }
         return true;
     }
 
     public override void OnClientDisconnect(ClientDisconnectedEvent args)
     {
-        _engine?.Remove(args.Slot);
-        _slotToSteamId.Remove(args.Slot);
+        try
+        {
+            _engine?.Remove(args.Slot);
+            _slotToSteamId.Remove(args.Slot);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{Name}] OnClientDisconnect failed: {ex}");
+        }
     }
 
     public override void OnGameFrame(bool simulating, bool firstTick, bool lastTick)
