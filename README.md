@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" alt="LockTimer" width="400">
+</p>
+
 # LockTimer
 
 Speedrun timer plugin for [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) using the [Deadworks](https://github.com/nicksettler/deadworks) managed plugin system.
