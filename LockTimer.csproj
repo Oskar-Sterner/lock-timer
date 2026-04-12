@@ -8,16 +8,21 @@
     <Nullable>enable</Nullable>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Path to your Deadlock game installation. Override via environment variable
+         or pass on the command line: dotnet build -p:DeadlockDir="D:\Steam\..." -->
+    <DeadlockDir Condition="'$(DeadlockDir)' == ''">$(DEADLOCK_GAME_DIR)</DeadlockDir>
+    <DeadlockBin>$(DeadlockDir)\game\bin\win64</DeadlockBin>
   </PropertyGroup>
 
   <ItemGroup>
     <Reference Include="DeadworksManaged.Api">
-      <HintPath>F:\SteamLibrary\steamapps\common\Deadlock\game\bin\win64\managed\DeadworksManaged.Api.dll</HintPath>
+      <HintPath>$(DeadlockBin)\managed\DeadworksManaged.Api.dll</HintPath>
       <Private>false</Private>
       <ExcludeAssets>runtime</ExcludeAssets>
     </Reference>
     <Reference Include="Google.Protobuf">
-      <HintPath>F:\SteamLibrary\steamapps\common\Deadlock\game\bin\win64\managed\Google.Protobuf.dll</HintPath>
+      <HintPath>$(DeadlockBin)\managed\Google.Protobuf.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
@@ -37,16 +42,28 @@
   </ItemGroup>
 
   <Target Name="DeployToGame" AfterTargets="Build">
+    <!-- Plugin + managed deps go in plugins/ (PluginLoadContext probes here) -->
     <ItemGroup>
-      <DeployFiles Include="$(OutputPath)LockTimer.dll;$(OutputPath)LockTimer.pdb" />
-      <DeployFiles Include="$(OutputPath)Microsoft.Data.Sqlite.dll" />
-      <DeployFiles Include="$(OutputPath)SQLitePCLRaw.core.dll" />
-      <DeployFiles Include="$(OutputPath)SQLitePCLRaw.provider.e_sqlite3.dll" />
-      <DeployFiles Include="$(OutputPath)SQLitePCLRaw.batteries_v2.dll" />
-      <DeployFiles Include="$(OutputPath)runtimes\win-x64\native\e_sqlite3.dll" />
+      <PluginFiles Include="$(OutputPath)LockTimer.dll;$(OutputPath)LockTimer.pdb" />
+      <PluginFiles Include="$(OutputPath)Microsoft.Data.Sqlite.dll" />
+      <PluginFiles Include="$(OutputPath)SQLitePCLRaw.core.dll" />
+      <PluginFiles Include="$(OutputPath)SQLitePCLRaw.provider.e_sqlite3.dll" />
+      <PluginFiles Include="$(OutputPath)SQLitePCLRaw.batteries_v2.dll" />
     </ItemGroup>
-    <Copy SourceFiles="@(DeployFiles)"
-          DestinationFolder="F:\SteamLibrary\steamapps\common\Deadlock\game\bin\win64\managed\plugins"
+    <Copy SourceFiles="@(PluginFiles)"
+          DestinationFolder="$(DeadlockBin)\managed\plugins"
+          SkipUnchangedFiles="false"
+          Retries="0"
+          ContinueOnError="WarnAndContinue" />
+
+    <!-- Native SQLite DLL must NOT go in plugins/ — PluginLoader tries to load it
+         as a .NET assembly and crashes with BadImageFormatException.
+         Place it in the process directory (bin/win64/) where P/Invoke always probes. -->
+    <ItemGroup>
+      <NativeDeps Include="$(OutputPath)runtimes\win-x64\native\e_sqlite3.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(NativeDeps)"
+          DestinationFolder="$(DeadlockBin)"
           SkipUnchangedFiles="false"
           Retries="0"
           ContinueOnError="WarnAndContinue" />

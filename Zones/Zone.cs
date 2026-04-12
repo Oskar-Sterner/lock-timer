@@ -10,10 +10,15 @@ public sealed record Zone(
     Vector3 Max,
     long UpdatedAtUnix)
 {
-    public bool Contains(Vector3 p) =>
-        p.X >= Min.X && p.X <= Max.X &&
-        p.Y >= Min.Y && p.Y <= Max.Y &&
-        p.Z >= Min.Z && p.Z <= Max.Z;
+    /// <summary>
+    /// Checks if a point is inside the zone, expanded by a margin on all sides.
+    /// The margin accounts for the player's collision hull so the zone triggers
+    /// when any part of the player overlaps, not just their origin point.
+    /// </summary>
+    public bool Contains(Vector3 p, float margin = 20f) =>
+        p.X >= Min.X - margin && p.X <= Max.X + margin &&
+        p.Y >= Min.Y - margin && p.Y <= Max.Y + margin &&
+        p.Z >= Min.Z - margin && p.Z <= Max.Z + margin;
 
     public bool IsZeroVolume =>
         Min.X == Max.X || Min.Y == Max.Y || Min.Z == Max.Z;

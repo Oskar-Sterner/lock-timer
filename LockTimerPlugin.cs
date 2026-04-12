@@ -21,6 +21,13 @@ public class LockTimerPlugin : DeadworksPluginBase
     private ZoneEditor? _editor;
     private ChatCommands? _commands;
     private readonly Dictionary<int, ulong> _slotToSteamId = new();
+    private readonly Dictionary<int, long> _slotReadyAt = new();
+    private IHandle? _tickTimer;
+
+    private bool _zonesRendered;
+    private Zone? _startZone;
+    private Zone? _endZone;
+
 
     public override void OnLoad(bool isReload)
     {
@@ -38,10 +45,9 @@ public class LockTimerPlugin : DeadworksPluginBase
             _editor   = new ZoneEditor(_zones, _engine);
             _commands = new ChatCommands(_editor, _renderer, _records, _engine);
 
-            // PluginRegistry.RegisterChatCommands does not exist in the vendored API.
-            // The plugin loader (PluginLoader.ChatCommands.cs) scans plugin.GetType().GetMethods()
-            // for [ChatCommand] attributes — only methods on the plugin class itself are found.
-            // Thin wrappers below delegate to _commands.
+            // Use Timer.Every instead of OnGameFrame to avoid per-tick native interop
+            // overhead that causes thread starvation and client timeouts during connection.
+            _tickTimer = Timer.Every(100.Milliseconds(), TickPlayers);
 
             Console.WriteLine($"[{Name}] {(isReload ? "Reloaded" : "Loaded")}. DB: {dbPath}");
         }
@@ -55,6 +61,7 @@ public class LockTimerPlugin : DeadworksPluginBase
     {
         try
         {
+            _tickTimer?.Cancel();
             _renderer?.ClearAll();
             _db?.Dispose();
             Console.WriteLine($"[{Name}] Unloaded.");
@@ -81,9 +88,10 @@ public class LockTimerPlugin : DeadworksPluginBase
             var start = zones.FirstOrDefault(z => z.Kind == ZoneKind.Start);
             var end   = zones.FirstOrDefault(z => z.Kind == ZoneKind.End);
             _engine.SetZones(start, end);
-
-            if (start is not null) _renderer.Render(start);
-            if (end   is not null) _renderer.Render(end);
+            _commands?.SetSavedZones(start, end);
+            _startZone = start;
+            _endZone = end;
+            _zonesRendered = false;
 
             Console.WriteLine($"[{Name}] Loaded {zones.Count} zone(s) for {map}.");
         }
@@ -98,6 +106,9 @@ public class LockTimerPlugin : DeadworksPluginBase
         try
         {
             _slotToSteamId[args.Slot] = args.SteamId;
+            // Delay ticking this player for 5 seconds to let the pawn fully initialize.
+            // Accessing pawn.Position before initialization causes a native segfault.
+            _slotReadyAt[args.Slot] = Environment.TickCount64 + 5000;
         }
         catch (Exception ex)
         {
@@ -112,6 +123,7 @@ public class LockTimerPlugin : DeadworksPluginBase
         {
             _engine?.Remove(args.Slot);
             _slotToSteamId.Remove(args.Slot);
+            _slotReadyAt.Remove(args.Slot);
         }
         catch (Exception ex)
         {
@@ -119,34 +131,51 @@ public class LockTimerPlugin : DeadworksPluginBase
         }
     }
 
-    public override void OnGameFrame(bool simulating, bool firstTick, bool lastTick)
+    private void TickPlayers()
     {
-        if (!simulating || _engine is null || _records is null) return;
+        if (_engine is null || _records is null) return;
 
         try
         {
             long now = Environment.TickCount64;
 
-            // Players.All does not exist; use Players.GetAll() (Players.cs line 34).
-            foreach (var player in Players.GetAll())
+            foreach (var controller in Players.GetAll())
             {
-                // No IsBot property on CCitadelPlayerController; skip non-connected handled by GetAll().
-                // No .Pawn property on controller; use GetHeroPawn() directly (PlayerEntities.cs line 47).
-                var pawn = player.GetHeroPawn();
+                int slot = controller.EntityIndex - 1;
+
+                // Skip players whose pawn may not be fully initialized yet
+                if (_slotReadyAt.TryGetValue(slot, out var readyAt) && now < readyAt)
+                    continue;
+
+                var pawn = controller.GetHeroPawn();
                 if (pawn is null) continue;
 
-                // player.Slot does not exist; EntityIndex - 1 gives the slot (Chat.cs line 22).
-                int slot = player.EntityIndex - 1;
+                // Render zone markers once the first player is fully connected.
+                // Can't do this at server startup — entity system isn't ready yet.
+                if (!_zonesRendered && _renderer is not null)
+                {
+                    _zonesRendered = true;
+                    try
+                    {
+                        if (_startZone is not null) _renderer.Render(_startZone);
+                        if (_endZone is not null) _renderer.Render(_endZone);
+                        Console.WriteLine($"[{Name}] Zone markers rendered.");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[{Name}] Zone render failed: {ex}");
+                    }
+                }
 
                 var finished = _engine.Tick(slot, pawn.Position, now);
                 if (finished is null) continue;
 
-                OnRunFinished(player, finished.Value);
+                OnRunFinished(controller, finished.Value);
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[{Name}] OnGameFrame failed: {ex}");
+            Console.WriteLine($"[{Name}] TickPlayers failed: {ex}");
         }
     }
 
@@ -185,35 +214,35 @@ public class LockTimerPlugin : DeadworksPluginBase
     // The plugin loader scans this class's methods for [ChatCommand] attributes
     // (PluginLoader.ChatCommands.cs line 59). Each wrapper delegates to _commands.
 
-    [ChatCommand("!start1")]
+    [ChatCommand("start1")]
     public HookResult OnStart1(ChatCommandContext ctx)
         => _commands?.OnStart1(ctx) ?? HookResult.Continue;
 
-    [ChatCommand("!start2")]
+    [ChatCommand("start2")]
     public HookResult OnStart2(ChatCommandContext ctx)
         => _commands?.OnStart2(ctx) ?? HookResult.Continue;
 
-    [ChatCommand("!end1")]
+    [ChatCommand("end1")]
     public HookResult OnEnd1(ChatCommandContext ctx)
         => _commands?.OnEnd1(ctx) ?? HookResult.Continue;
 
-    [ChatCommand("!end2")]
+    [ChatCommand("end2")]
     public HookResult OnEnd2(ChatCommandContext ctx)
         => _commands?.OnEnd2(ctx) ?? HookResult.Continue;
 
-    [ChatCommand("!savezones")]
+    [ChatCommand("savezones")]
     public HookResult OnSaveZones(ChatCommandContext ctx)
         => _commands?.OnSaveZones(ctx) ?? HookResult.Continue;
 
-    [ChatCommand("!delzones")]
+    [ChatCommand("delzones")]
     public HookResult OnDelZones(ChatCommandContext ctx)
         => _commands?.OnDelZones(ctx) ?? HookResult.Continue;
 
-    [ChatCommand("!zones")]
+    [ChatCommand("zones")]
     public HookResult OnZonesStatus(ChatCommandContext ctx)
         => _commands?.OnZonesStatus(ctx) ?? HookResult.Continue;
 
-    [ChatCommand("!pb")]
+    [ChatCommand("pb")]
     public HookResult OnPb(ChatCommandContext ctx)
     {
         if (_commands is null) return HookResult.Continue;
@@ -222,11 +251,34 @@ public class LockTimerPlugin : DeadworksPluginBase
         return _commands.OnPb(ctx, sid);
     }
 
-    [ChatCommand("!top")]
+    [ChatCommand("top")]
     public HookResult OnTop(ChatCommandContext ctx)
         => _commands?.OnTop(ctx) ?? HookResult.Continue;
 
-    [ChatCommand("!reset")]
+    [ChatCommand("reset")]
     public HookResult OnReset(ChatCommandContext ctx)
         => _commands?.OnReset(ctx) ?? HookResult.Continue;
+
+    [ChatCommand("pos")]
+    public HookResult OnPos(ChatCommandContext ctx)
+    {
+        var pawn = ctx.Controller?.GetHeroPawn();
+        if (pawn is null) return HookResult.Handled;
+        var p = pawn.Position;
+        Chat.PrintToChat(ctx.Message.SenderSlot,
+            $"[LockTimer] pos: ({p.X:F1}, {p.Y:F1}, {p.Z:F1})");
+        if (_startZone is not null)
+        {
+            var s = _startZone;
+            Chat.PrintToChat(ctx.Message.SenderSlot,
+                $"[LockTimer] start: ({s.Min.X:F1},{s.Min.Y:F1},{s.Min.Z:F1}) -> ({s.Max.X:F1},{s.Max.Y:F1},{s.Max.Z:F1}) in={s.Contains(p)}");
+        }
+        if (_endZone is not null)
+        {
+            var e = _endZone;
+            Chat.PrintToChat(ctx.Message.SenderSlot,
+                $"[LockTimer] end: ({e.Min.X:F1},{e.Min.Y:F1},{e.Min.Z:F1}) -> ({e.Max.X:F1},{e.Max.Y:F1},{e.Max.Z:F1}) in={e.Contains(p)}");
+        }
+        return HookResult.Handled;
+    }
 }
