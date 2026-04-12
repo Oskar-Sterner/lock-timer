@@ -7,6 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EnableDynamicLoading>true</EnableDynamicLoading>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,9 +22,22 @@
     </Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Data\Migrations\*.sql" />
+  </ItemGroup>
+
   <Target Name="DeployToGame" AfterTargets="Build">
     <ItemGroup>
       <DeployFiles Include="$(OutputPath)LockTimer.dll;$(OutputPath)LockTimer.pdb" />
+      <DeployFiles Include="$(OutputPath)Microsoft.Data.Sqlite.dll" />
+      <DeployFiles Include="$(OutputPath)SQLitePCLRaw.core.dll" />
+      <DeployFiles Include="$(OutputPath)SQLitePCLRaw.provider.e_sqlite3.dll" />
+      <DeployFiles Include="$(OutputPath)SQLitePCLRaw.batteries_v2.dll" />
+      <DeployFiles Include="$(OutputPath)runtimes\win-x64\native\e_sqlite3.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(DeployFiles)"
           DestinationFolder="F:\SteamLibrary\steamapps\common\Deadlock\game\bin\win64\managed\plugins"
