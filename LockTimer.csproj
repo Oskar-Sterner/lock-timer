@@ -27,6 +27,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="LockTimer.Tests\**" />
+    <EmbeddedResource Remove="LockTimer.Tests\**" />
+    <None Remove="LockTimer.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Data\Migrations\*.sql" />
   </ItemGroup>
 
