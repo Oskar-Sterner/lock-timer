@@ -98,7 +98,8 @@ public sealed class ChatCommands
     [ChatCommand("!pb")]
     public HookResult OnPb(ChatCommandContext ctx)
     {
-        // No SteamId is available from a live chat message; SenderSlot is used as the key.
+        // CCitadelPlayerController has no SteamId property; slot (SenderSlot) is the persistent key,
+        // consistent with LockTimerPlugin.OnRunFinished which uses player.EntityIndex - 1.
         var sid = (long)ctx.Message.SenderSlot;
         var pb  = _records.GetPb(sid, Server.MapName);
         Reply(ctx, pb is null
