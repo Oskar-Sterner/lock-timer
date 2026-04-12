@@ -96,12 +96,9 @@ public sealed class ChatCommands
     }
 
     [ChatCommand("!pb")]
-    public HookResult OnPb(ChatCommandContext ctx)
+    public HookResult OnPb(ChatCommandContext ctx, long steamId)
     {
-        // CCitadelPlayerController has no SteamId property; slot (SenderSlot) is the persistent key,
-        // consistent with LockTimerPlugin.OnRunFinished which uses player.EntityIndex - 1.
-        var sid = (long)ctx.Message.SenderSlot;
-        var pb  = _records.GetPb(sid, Server.MapName);
+        var pb = _records.GetPb(steamId, Server.MapName);
         Reply(ctx, pb is null
             ? "no PB yet"
             : $"your PB on {Server.MapName}: {TimeFormatter.FormatTime(pb.TimeMs)}");

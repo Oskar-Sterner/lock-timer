@@ -20,6 +20,7 @@ public class LockTimerPlugin : DeadworksPluginBase
     private TimerEngine? _engine;
     private ZoneEditor? _editor;
     private ChatCommands? _commands;
+    private readonly Dictionary<int, ulong> _slotToSteamId = new();
 
     public override void OnLoad(bool isReload)
     {
@@ -92,9 +93,16 @@ public class LockTimerPlugin : DeadworksPluginBase
         }
     }
 
+    public override bool OnClientConnect(ClientConnectEvent args)
+    {
+        _slotToSteamId[args.Slot] = args.SteamId;
+        return true;
+    }
+
     public override void OnClientDisconnect(ClientDisconnectedEvent args)
     {
         _engine?.Remove(args.Slot);
+        _slotToSteamId.Remove(args.Slot);
     }
 
     public override void OnGameFrame(bool simulating, bool firstTick, bool lastTick)
@@ -132,11 +140,13 @@ public class LockTimerPlugin : DeadworksPluginBase
     {
         if (_records is null) return;
 
-        // CCitadelPlayerController has no SteamId property (PlayerEntities.cs confirms).
-        // Use slot (EntityIndex - 1) as the persistent player key, consistent with OnPb.
-        long sid = player.EntityIndex - 1;
+        // SteamId comes from the slot→steamid map populated by OnClientConnect.
+        int slot = player.EntityIndex - 1;
+        if (!_slotToSteamId.TryGetValue(slot, out var steamId))
+            return; // player has no tracked SteamId yet — skip the record write
+
         var result = _records.UpsertIfFaster(
-            steamId: sid,
+            steamId: (long)steamId,
             map: Server.MapName,
             timeMs: run.ElapsedMs,
             playerName: player.PlayerName,
@@ -191,7 +201,12 @@ public class LockTimerPlugin : DeadworksPluginBase
 
     [ChatCommand("!pb")]
     public HookResult OnPb(ChatCommandContext ctx)
-        => _commands?.OnPb(ctx) ?? HookResult.Continue;
+    {
+        if (_commands is null) return HookResult.Continue;
+        int slot = ctx.Message.SenderSlot;
+        long sid = _slotToSteamId.TryGetValue(slot, out var s) ? (long)s : 0;
+        return _commands.OnPb(ctx, sid);
+    }
 
     [ChatCommand("!top")]
     public HookResult OnTop(ChatCommandContext ctx)
