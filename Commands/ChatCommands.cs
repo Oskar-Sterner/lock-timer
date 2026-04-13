@@ -8,6 +8,7 @@ namespace LockTimer.Commands;
 public sealed class ChatCommands
 {
     private readonly ZoneEditor _editor;
+    private readonly InteractiveEditor _interactive;
     private readonly ZoneRenderer _renderer;
     private readonly RecordRepository _records;
     private readonly TimerEngine _engine;
@@ -16,14 +17,16 @@ public sealed class ChatCommands
 
     public ChatCommands(
         ZoneEditor editor,
+        InteractiveEditor interactive,
         ZoneRenderer renderer,
         RecordRepository records,
         TimerEngine engine)
     {
-        _editor   = editor;
-        _renderer = renderer;
-        _records  = records;
-        _engine   = engine;
+        _editor      = editor;
+        _interactive = interactive;
+        _renderer    = renderer;
+        _records     = records;
+        _engine      = engine;
     }
 
     /// <summary>Called by the plugin after loading zones from DB so /zones can render them.</summary>
@@ -42,6 +45,38 @@ public sealed class ChatCommands
     // SenderSlot is on ChatMessage, accessed via ctx.Message.SenderSlot.
     private static void Reply(ChatCommandContext ctx, string text)
         => Chat.PrintToChat(ctx.Message.SenderSlot, $"[LockTimer] {text}");
+
+    [ChatCommand("start")]
+    public HookResult OnStartInteractive(ChatCommandContext ctx)
+    {
+        var slot = ctx.Message.SenderSlot;
+        _interactive.Begin(slot, ZoneKind.Start);
+        Reply(ctx, "Aim at the first corner and shoot to place it.");
+        return HookResult.Handled;
+    }
+
+    [ChatCommand("end")]
+    public HookResult OnEndInteractive(ChatCommandContext ctx)
+    {
+        var slot = ctx.Message.SenderSlot;
+        _interactive.Begin(slot, ZoneKind.End);
+        Reply(ctx, "Aim at the first corner and shoot to place it.");
+        return HookResult.Handled;
+    }
+
+    [ChatCommand("cancel")]
+    public HookResult OnCancelEdit(ChatCommandContext ctx)
+    {
+        var slot = ctx.Message.SenderSlot;
+        if (!_interactive.IsEditing(slot))
+        {
+            Reply(ctx, "Not currently editing a zone.");
+            return HookResult.Handled;
+        }
+        _interactive.Cancel(slot);
+        Reply(ctx, "Zone editing cancelled.");
+        return HookResult.Handled;
+    }
 
     [ChatCommand("start1")]
     public HookResult OnStart1(ChatCommandContext ctx)

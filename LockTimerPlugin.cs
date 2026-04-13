@@ -20,11 +20,13 @@ public class LockTimerPlugin : DeadworksPluginBase
     private ZoneRenderer? _renderer;
     private TimerEngine? _engine;
     private ZoneEditor? _editor;
+    private InteractiveEditor? _interactive;
     private ChatCommands? _commands;
     private SpeedHud? _speedHud;
     private TimerHud? _timerHud;
     private readonly Dictionary<int, ulong> _slotToSteamId = new();
     private readonly Dictionary<int, long> _slotReadyAt = new();
+    private readonly Dictionary<int, long> _editConfirmCooldown = new();
     private IHandle? _tickTimer;
 
     private bool _zonesRendered;
@@ -43,10 +45,11 @@ public class LockTimerPlugin : DeadworksPluginBase
             _db       = LockTimerDb.Open(dbPath);
             _zones    = new ZoneRepository(_db.Connection);
             _records  = new RecordRepository(_db.Connection);
-            _renderer = new ZoneRenderer();
-            _engine   = new TimerEngine();
-            _editor   = new ZoneEditor(_zones, _engine);
-            _commands = new ChatCommands(_editor, _renderer, _records, _engine);
+            _renderer    = new ZoneRenderer();
+            _engine      = new TimerEngine();
+            _editor      = new ZoneEditor(_zones, _engine);
+            _interactive = new InteractiveEditor(_editor);
+            _commands    = new ChatCommands(_editor, _interactive, _renderer, _records, _engine);
             _speedHud = new SpeedHud();
             _timerHud = new TimerHud();
 
@@ -127,6 +130,8 @@ public class LockTimerPlugin : DeadworksPluginBase
         try
         {
             _engine?.Remove(args.Slot);
+            _interactive?.Remove(args.Slot);
+            _editConfirmCooldown.Remove(args.Slot);
             _speedHud?.Remove(args.Slot);
             _timerHud?.Remove(args.Slot);
             _slotToSteamId.Remove(args.Slot);
@@ -136,6 +141,77 @@ public class LockTimerPlugin : DeadworksPluginBase
         {
             Console.WriteLine($"[{Name}] OnClientDisconnect failed: {ex}");
         }
+    }
+
+    public override void OnAbilityAttempt(AbilityAttemptEvent args)
+    {
+        if (_interactive?.IsEditing(args.PlayerSlot) != true) return;
+
+        // Block all combat inputs while in editing mode
+        args.Block(InputButton.Attack | InputButton.Attack2);
+        args.BlockAllAbilities();
+        args.BlockAllItems();
+
+        // Update the cached aim position every frame. The physics raycast only
+        // works on the game thread (here), not from Timer callbacks.
+        var pawn = args.Controller?.GetHeroPawn();
+        if (pawn is not null)
+            _interactive.UpdateAim(args.PlayerSlot, pawn);
+
+        // Only react to attack press (rising edge)
+        if (!args.IsChanged(InputButton.Attack) || !args.IsHeld(InputButton.Attack)) return;
+
+        // Cooldown prevents double-fire: OnAbilityAttempt fires multiple times
+        // per frame (once per ability slot) with the same ChangedButtons state.
+        long now = Environment.TickCount64;
+        if (_editConfirmCooldown.TryGetValue(args.PlayerSlot, out var until) && now < until)
+            return;
+        _editConfirmCooldown[args.PlayerSlot] = now + 500;
+
+        var outcome = _interactive.Confirm(args.PlayerSlot);
+        switch (outcome)
+        {
+            case ConfirmOutcome.Corner1Set:
+                Chat.PrintToChat(args.PlayerSlot,
+                    "[LockTimer] Corner 1 placed. Aim at the opposite corner and shoot.");
+                break;
+            case ConfirmOutcome.StartZoneReady:
+                _editConfirmCooldown.Remove(args.PlayerSlot);
+                AutoSaveZone(args.PlayerSlot, ZoneKind.Start);
+                break;
+            case ConfirmOutcome.EndZoneReady:
+                _editConfirmCooldown.Remove(args.PlayerSlot);
+                AutoSaveZone(args.PlayerSlot, ZoneKind.End);
+                break;
+        }
+    }
+
+    private void AutoSaveZone(int slot, ZoneKind kind)
+    {
+        if (_editor is null || _engine is null || _renderer is null) return;
+
+        var zone = _editor.SaveSingleZone(kind, Server.MapName, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        if (zone is null)
+        {
+            Chat.PrintToChat(slot, $"[LockTimer] {kind} zone has zero volume — not saved.");
+            return;
+        }
+
+        // Update cached zones and engine
+        if (kind == ZoneKind.Start)
+            _startZone = zone;
+        else
+            _endZone = zone;
+
+        _engine.SetZones(_startZone, _endZone);
+        _commands?.SetSavedZones(_startZone, _endZone);
+
+        // Re-render all zones
+        _renderer.ClearAll();
+        if (_startZone is not null) _renderer.Render(_startZone);
+        if (_endZone is not null) _renderer.Render(_endZone);
+
+        Chat.PrintToChat(slot, $"[LockTimer] {kind} zone saved!");
     }
 
     private void TickPlayers()
@@ -175,6 +251,7 @@ public class LockTimerPlugin : DeadworksPluginBase
                 }
 
                 _speedHud?.Tick(slot, pawn);
+                _interactive?.Tick(slot);
 
                 var run = _engine.GetRun(slot);
                 var finished = _engine.Tick(slot, pawn.Position, now);
@@ -226,6 +303,18 @@ public class LockTimerPlugin : DeadworksPluginBase
     // --- Chat command wrappers ---
     // The plugin loader scans this class's methods for [ChatCommand] attributes
     // (PluginLoader.ChatCommands.cs line 59). Each wrapper delegates to _commands.
+
+    [ChatCommand("start")]
+    public HookResult OnStartInteractive(ChatCommandContext ctx)
+        => _commands?.OnStartInteractive(ctx) ?? HookResult.Continue;
+
+    [ChatCommand("end")]
+    public HookResult OnEndInteractive(ChatCommandContext ctx)
+        => _commands?.OnEndInteractive(ctx) ?? HookResult.Continue;
+
+    [ChatCommand("cancel")]
+    public HookResult OnCancelEdit(ChatCommandContext ctx)
+        => _commands?.OnCancelEdit(ctx) ?? HookResult.Continue;
 
     [ChatCommand("start1")]
     public HookResult OnStart1(ChatCommandContext ctx)

@@ -79,6 +79,37 @@ public sealed class ZoneEditor
         _engine.ResetAll();
     }
 
+    public void SetPendingStart(Vector3 corner1, Vector3 corner2)
+    {
+        _pendingStart1 = corner1;
+        _pendingStart2 = corner2;
+    }
+
+    public void SetPendingEnd(Vector3 corner1, Vector3 corner2)
+    {
+        _pendingEnd1 = corner1;
+        _pendingEnd2 = corner2;
+    }
+
+    /// <summary>
+    /// Saves a single zone (start or end) from its pending corners.
+    /// Returns the zone on success, null if corners are missing or zero-volume.
+    /// </summary>
+    public Zone? SaveSingleZone(ZoneKind kind, string map, long nowUnix)
+    {
+        var (c1, c2) = kind == ZoneKind.Start
+            ? (_pendingStart1, _pendingStart2)
+            : (_pendingEnd1, _pendingEnd2);
+
+        if (c1 is null || c2 is null) return null;
+
+        var zone = Zone.FromCorners(kind, map, c1.Value, c2.Value, nowUnix);
+        if (zone.IsZeroVolume) return null;
+
+        _zones.Upsert(zone);
+        return zone;
+    }
+
     public PendingStatus GetPendingStatus()
         => new(_pendingStart1.HasValue, _pendingStart2.HasValue, _pendingEnd1.HasValue, _pendingEnd2.HasValue);
 }
