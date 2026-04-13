@@ -32,7 +32,11 @@ public sealed class SpeedHud
 
     public void Tick(int slot, CCitadelPlayerPawn pawn)
     {
-        if (!_enabledSlots.Contains(slot)) return;
+        // Auto-enable for all players; /speed toggles it off
+        if (!_enabledSlots.Contains(slot))
+        {
+            _enabledSlots.Add(slot);
+        }
 
         // Respawn if the entity was lost (e.g. after death/respawn)
         if (!_textEntities.TryGetValue(slot, out var wt) || wt.Handle == nint.Zero)
