@@ -22,6 +22,7 @@ public class LockTimerPlugin : DeadworksPluginBase
     private ZoneEditor? _editor;
     private ChatCommands? _commands;
     private SpeedHud? _speedHud;
+    private TimerHud? _timerHud;
     private readonly Dictionary<int, ulong> _slotToSteamId = new();
     private readonly Dictionary<int, long> _slotReadyAt = new();
     private IHandle? _tickTimer;
@@ -47,6 +48,7 @@ public class LockTimerPlugin : DeadworksPluginBase
             _editor   = new ZoneEditor(_zones, _engine);
             _commands = new ChatCommands(_editor, _renderer, _records, _engine);
             _speedHud = new SpeedHud();
+            _timerHud = new TimerHud();
 
             // Use Timer.Every instead of OnGameFrame to avoid per-tick native interop
             // overhead that causes thread starvation and client timeouts during connection.
@@ -126,6 +128,7 @@ public class LockTimerPlugin : DeadworksPluginBase
         {
             _engine?.Remove(args.Slot);
             _speedHud?.Remove(args.Slot);
+            _timerHud?.Remove(args.Slot);
             _slotToSteamId.Remove(args.Slot);
             _slotReadyAt.Remove(args.Slot);
         }
@@ -173,7 +176,11 @@ public class LockTimerPlugin : DeadworksPluginBase
 
                 _speedHud?.Tick(slot, pawn);
 
+                var run = _engine.GetRun(slot);
                 var finished = _engine.Tick(slot, pawn.Position, now);
+
+                _timerHud?.Tick(slot, pawn, run, now);
+
                 if (finished is null) continue;
 
                 OnRunFinished(controller, finished.Value);
