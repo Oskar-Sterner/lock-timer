@@ -3,6 +3,7 @@ using System.Linq;
 using DeadworksManaged.Api;
 using LockTimer.Commands;
 using LockTimer.Data;
+using LockTimer.Hud;
 using LockTimer.Records;
 using LockTimer.Timing;
 using LockTimer.Zones;
@@ -20,6 +21,7 @@ public class LockTimerPlugin : DeadworksPluginBase
     private TimerEngine? _engine;
     private ZoneEditor? _editor;
     private ChatCommands? _commands;
+    private SpeedHud? _speedHud;
     private readonly Dictionary<int, ulong> _slotToSteamId = new();
     private readonly Dictionary<int, long> _slotReadyAt = new();
     private IHandle? _tickTimer;
@@ -44,6 +46,7 @@ public class LockTimerPlugin : DeadworksPluginBase
             _engine   = new TimerEngine();
             _editor   = new ZoneEditor(_zones, _engine);
             _commands = new ChatCommands(_editor, _renderer, _records, _engine);
+            _speedHud = new SpeedHud();
 
             // Use Timer.Every instead of OnGameFrame to avoid per-tick native interop
             // overhead that causes thread starvation and client timeouts during connection.
@@ -122,6 +125,7 @@ public class LockTimerPlugin : DeadworksPluginBase
         try
         {
             _engine?.Remove(args.Slot);
+            _speedHud?.Remove(args.Slot);
             _slotToSteamId.Remove(args.Slot);
             _slotReadyAt.Remove(args.Slot);
         }
@@ -166,6 +170,8 @@ public class LockTimerPlugin : DeadworksPluginBase
                         Console.WriteLine($"[{Name}] Zone render failed: {ex}");
                     }
                 }
+
+                _speedHud?.Tick(slot, pawn);
 
                 var finished = _engine.Tick(slot, pawn.Position, now);
                 if (finished is null) continue;
@@ -279,6 +285,18 @@ public class LockTimerPlugin : DeadworksPluginBase
             Chat.PrintToChat(ctx.Message.SenderSlot,
                 $"[LockTimer] end: ({e.Min.X:F1},{e.Min.Y:F1},{e.Min.Z:F1}) -> ({e.Max.X:F1},{e.Max.Y:F1},{e.Max.Z:F1}) in={e.Contains(p)}");
         }
+        return HookResult.Handled;
+    }
+
+    [ChatCommand("speed")]
+    public HookResult OnSpeed(ChatCommandContext ctx)
+    {
+        if (_speedHud is null) return HookResult.Continue;
+        var pawn = ctx.Controller?.GetHeroPawn();
+        if (pawn is null) return HookResult.Handled;
+        int slot = ctx.Message.SenderSlot;
+        bool enabled = _speedHud.Toggle(slot, pawn);
+        Chat.PrintToChat(slot, $"[LockTimer] speed HUD {(enabled ? "enabled" : "disabled")}");
         return HookResult.Handled;
     }
 }
