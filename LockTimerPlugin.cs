@@ -254,9 +254,14 @@ public class LockTimerPlugin : DeadworksPluginBase
                 _interactive?.Tick(slot);
 
                 var run = _engine.GetRun(slot);
-                var finished = _engine.Tick(slot, pawn.Position, now);
 
+                // Paint the HUD before ticking the engine. On the finish tick the
+                // engine flips state→Idle and clears StartTickMs, so the HUD must
+                // render `now - StartTickMs` first — that value matches what the
+                // engine then returns as the finished time, and chat prints.
                 _timerHud?.Tick(slot, pawn, run, now);
+
+                var finished = _engine.Tick(slot, pawn.Position, now);
 
                 if (finished is null) continue;
 
