@@ -8,6 +8,9 @@
     <Nullable>enable</Nullable>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- CS0618: [ChatCommand] is deprecated in deadworks v0.4.6 (use [Command]).
+         Migration is tracked separately; suppress so the existing handlers still build. -->
+    <NoWarn>CS0618</NoWarn>
 
     <!-- Path to your Deadlock game installation. Override via environment variable
          or pass on the command line: dotnet build -p:DeadlockDir="D:\Steam\..." -->
