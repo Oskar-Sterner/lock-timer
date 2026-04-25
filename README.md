@@ -61,19 +61,19 @@ All commands use the `/` prefix in game chat.
 
 | Command | Description |
 |---|---|
-| `/start1` `/start2` | Set corner 1 / 2 of the start zone at your crosshair |
-| `/end1` `/end2` | Set corner 1 / 2 of the end zone at your crosshair |
-| `/savezones` | Save both zones for the current map |
-| `/delzones` | Delete zones for the current map |
-| `/zones` | Show pending zone status and re-render outlines |
-| `/pb` | Show your personal best on the current map |
-| `/top` | Show top 10 times on the current map |
-| `/reset` | Reset your current run |
-| `/pos` | Debug: show your position and zone containment status |
+| `/start` | Begin placing the **start** zone. Aim at one corner and shoot to lock it; a wireframe preview then follows your crosshair — aim at the opposite corner and shoot again to finish the zone. |
+| `/end` | Begin placing the **end** zone. Same aim-and-shoot workflow as `/start`. |
+| `/cancel` | Cancel an in-progress zone placement. |
+| `/savezones` | Persist the placed start and end zones for the current map. |
+| `/delzones` | Delete saved zones for the current map. |
+| `/zones` | Show pending zone status and re-render saved outlines. |
+| `/pb` | Show your personal best on the current map. |
+| `/top` | Show the top 10 times on the current map. |
+| `/reset` | Reset your current in-progress run. |
 
 ## How it works
 
-1. **Set up zones**: Use `/start1` and `/start2` to mark two opposite corners of the start zone, then `/end1` and `/end2` for the end zone. Use `/savezones` to save them.
+1. **Set up zones**: Type `/start` in chat — a yellow cursor dot appears where your crosshair is pointing. Shoot to lock corner 1. A wireframe box preview now follows your aim; aim at the opposite corner of the desired zone and shoot again to lock corner 2. Repeat with `/end` for the finish zone, then run `/savezones` to persist both. Use `/cancel` if you mis-clicked and want to abort the in-progress placement.
 
 2. **Run**: Walk into the start zone (green outline). When you leave it, the timer starts. When you enter the end zone (red outline), the timer stops and your time is recorded.
 
